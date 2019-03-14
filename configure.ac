@@ -490,6 +490,8 @@ AC_ARG_ENABLE([pcreposix],
   AS_HELP_STRING([--enable-pcreposix], [enable using PCRE Posix libs for regex functions]))
 AC_ARG_ENABLE([fpm],
   AS_HELP_STRING([--enable-fpm], [enable Forwarding Plane Manager support]))
+AC_ARG_ENABLE([cetcd],
+  AS_HELP_STRING([--enable-cetcd], [enable etcd client]))
 AC_ARG_ENABLE([systemd],
   AS_HELP_STRING([--enable-systemd], [enable Systemd support]))
 AC_ARG_ENABLE([werror],
@@ -558,6 +560,20 @@ case "${enable_systemd}" in
     AC_MSG_ERROR([enable systemd has been specified but systemd development env not found on your system])
   else
     AC_DEFINE([HAVE_SYSTEMD], [1], [Compile systemd support in])
+  fi
+  ;;
+  "*") ;;
+esac
+case "${enable_cetcd}" in
+  "no") ;;
+  "yes")
+  AC_CHECK_LIB([cetcd], [cetcd_client_init], [LIBS="$LIBS -lcetcd"])
+  if test $ac_cv_lib_cetcd_cetcd_client_init = no; then
+    AC_MSG_ERROR([enable cetcd has been specified but cetcd development env not found on your system])
+  else
+    AC_DEFINE([HAVE_CETCD], [1], [Compile etcd support in])
+    CETCD=true
+    AM_CONDITIONAL([CETCD], [test "x$CETCD" = "xtrue"])
   fi
   ;;
   "*") ;;
@@ -2073,6 +2089,21 @@ if test "x$enable_zeromq" != "xno"; then
   ])
 fi
 AM_CONDITIONAL([ZEROMQ], [test "x$ZEROMQ" = "xtrue"])
+
+#dnl ------
+#dnl Cetcd
+#dnl ------
+#if test "x$enable_cetcd" != "xno"; then
+#  PKG_CHECK_MODULES([CETCD], [1], [LIBS="$LIBS -lcetcd"], [
+#    AC_DEFINE([HAVE_CETCD], [1], [Enable Cetcd support])
+#    CETCD=true
+#  ], [
+#    if test "x$enable_cetcd" = "xyes"; then
+#      AC_MSG_ERROR([configuration specifies --enable-cetcd but cetcd was not found])
+#    fi
+#  ])
+#fi
+#AM_CONDITIONAL([CETCD], [test "x$CETCD" = "xtrue"])
 
 dnl ----------
 dnl configure date
