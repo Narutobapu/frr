@@ -490,8 +490,8 @@ AC_ARG_ENABLE([pcreposix],
   AS_HELP_STRING([--enable-pcreposix], [enable using PCRE Posix libs for regex functions]))
 AC_ARG_ENABLE([fpm],
   AS_HELP_STRING([--enable-fpm], [enable Forwarding Plane Manager support]))
-AC_ARG_ENABLE([cetcd],
-  AS_HELP_STRING([--enable-cetcd], [enable etcd client]))
+AC_ARG_ENABLE([etcd_wrapper],
+  AS_HELP_STRING([--enable-etcd_wrapper], [enable etcd client]))
 AC_ARG_ENABLE([systemd],
   AS_HELP_STRING([--enable-systemd], [enable Systemd support]))
 AC_ARG_ENABLE([werror],
@@ -564,12 +564,12 @@ case "${enable_systemd}" in
   ;;
   "*") ;;
 esac
-case "${enable_cetcd}" in
+case "${enable_etcd_wrapper}" in
   "no") ;;
   "yes")
-  AC_CHECK_LIB([cetcd], [cetcd_client_init], [LIBS="$LIBS -lcetcd"])
-  if test $ac_cv_lib_cetcd_cetcd_client_init = no; then
-    AC_MSG_ERROR([enable cetcd has been specified but cetcd development env not found on your system])
+  AC_CHECK_LIB([etcd_wrapper], [create_txn_req_object], [ac_cv_lib_etcd_wrapper_create_txn_req_object=yes, LIBS="$LIBS -letcd_wrapper -lprotobuf -lgrpc -lgrpc++"], [ac_cv_lib_etcd_wrapper_create_txn_req_object=no], [-lprotobuf -lgrpc -lgrpc++])
+  if test "$ac_cv_lib_etcd_wrapper_create_txn_req_object" = no; then
+    AC_MSG_ERROR([enable etcd_wrapper has been specified but etcd_wrapper development env not found on your system])
   else
     AC_DEFINE([HAVE_CETCD], [1], [Compile etcd support in])
     CETCD=true
