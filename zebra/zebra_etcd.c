@@ -1,5 +1,7 @@
 #include <zebra.h>
-#include <cetcd.h>
+#include <arpa/inet.h>
+#include "etcd_client_txn_wrapper.h"
+#include "etcd_client_wrapper.h"
 #include "log.h"
 #include "libfrr.h"
 #include "stream.h"
@@ -64,8 +66,10 @@ typedef struct zetcd_glob_t_ {
    * Port on which the FPM is running.
    */
   int etcd_port;
-  cetcd_client zetcd_client;
-  cetcd_array zetcd_addrs;
+  txn_wrapper_t *txn_req;
+  txn_wrapper_t *txn_res;
+  channel_wrapper_t *channel;
+
   /*
    * List of rib_dest_t structures to be processed
    */
@@ -177,12 +181,13 @@ static int zetcd_push_routes_cb(struct thread *thread)
 {
   struct stream *s;
   char *key = NULL;
-
+  char *value = NULL;
+  int ret;
   struct prefix *prefix = NULL;
   rib_dest_t *dest = NULL;
 
-  cetcd_response *resp = NULL;
-  int prefix_len,num_writes;
+
+  int len,num_writes=0;
 
   zetcd_glob_p->t_push = NULL;
   do {
@@ -190,34 +195,35 @@ static int zetcd_push_routes_cb(struct thread *thread)
     s = zetcd_glob_p->obuf;
     dest = TAILQ_FIRST(&zetcd_glob_p->dest_q);
     prefix = rib_dest_prefix(dest);
-    prefix_len = (prefix->prefixlen + 7)/8;
-    key = malloc(prefix_len);
-    memcpy(key, &prefix->u.prefix, prefix_len);
+    //prefix_len = (prefix->prefixlen + 7)/8;
+    //key = malloc(prefix_len);
+    //memcpy(key, &prefix->u.prefix, prefix_len);
+    key = inet_ntoa(prefix->u.prefix4);
     if (stream_empty(s)) {
       zetcd_build_updates();
     }
-    resp = cetcd_set(&zetcd_glob_p->zetcd_client, "/sample1", (const char *)stream_pnt(s), 1000);
-    if(resp->err) 
+    value = (char *)stream_pnt(s);
+    len = stream_get_endp(s) - stream_get_getp(s);
+    zetcd_glob_p->txn_req = create_put_txn(key, value, len);
+    zetcd_glob_p->txn_res = create_txn_res_object();
+    ret = txn_wrapper(zetcd_glob_p->channel->obj, zetcd_glob_p->txn_res->obj,
+        zetcd_glob_p->txn_req->obj);
+    if(ret)
     {
-      zlog_err("error :%d, %s (%s)\n", resp->err->ecode, resp->err->message, resp->err->cause);
-      cetcd_response_print(resp);
-      cetcd_response_release(resp);
-      break;
+      zlog_err("error Unable to push into etcd");
+      return -1;
     }
-    cetcd_response_print(resp);
-    cetcd_response_release(resp);
     num_writes += 1;
     stream_reset(s);
 
     if (num_writes >= ZETCD_MAX_WRITES_PER_RUN) {
       break;
     }
-    if (thread_should_yield(thread)) {
-      break;
-    }
-
-  }while(1);
-  free(key);
+    //if (thread_should_yield(thread)) {
+     // break;
+    //}
+  //free(key);
+  }while(TAILQ_FIRST(&zetcd_glob_p->dest_q));
   return 0;
 }
 static inline void zetcd_push_routes()
@@ -226,13 +232,14 @@ static inline void zetcd_push_routes()
       &zetcd_glob_p->t_push);
 
 }
-static void zetcd_trigger_update(struct route_node *rn, const char *reason)
+static int zetcd_trigger_update(struct route_node *rn, const char *reason)
 {
   rib_dest_t *dest;
 
   dest = rib_dest_from_rnode(rn);
   TAILQ_INSERT_TAIL(&zetcd_glob_p->dest_q, dest, etcd_q_entries);
   zetcd_push_routes();
+  return 0;
 }
 
 static int zetcd_conn_up_thread_cb(struct thread *thread)
@@ -255,7 +262,7 @@ static int zetcd_conn_up_thread_cb(struct thread *thread)
 
 static void zetcd_connection_up(const char *reason)
 {
-  assert(&zetcd_glob_p->zetcd_client);
+  assert(&zetcd_glob_p->channel);
   assert(!zetcd_glob_p->t_conn_up);
   zetcd_rnodes_iter_init(&zetcd_glob_p->t_conn_up_state.iter);
   thread_add_timer_msec(zetcd_glob_p->master, zetcd_conn_up_thread_cb, NULL, 0,
@@ -264,39 +271,29 @@ static void zetcd_connection_up(const char *reason)
 }
 static int zetcd_connect_cb(struct thread *t)
 {
-  const char *zetcd_address = "http://127.0.0.1:2379";
-  cetcd_response *resp = NULL;
-  cetcd_array_init(&zetcd_glob_p->zetcd_addrs, 1);
-  cetcd_array_append(&zetcd_glob_p->zetcd_addrs, (void *)(zetcd_address));
-  cetcd_client_init(&zetcd_glob_p->zetcd_client, &zetcd_glob_p->zetcd_addrs);
-  resp = cetcd_set(&zetcd_glob_p->zetcd_client, "/frr_sample", "10.40.10.10.1", 100);
-  if(resp->err) 
+	//const char *zetcd_address = "http://127.0.0.1:2379";
+  int ret;
+
+	zetcd_glob_p->txn_req = create_put_txn("Kuldeep","20.20.20.1", 10);
+	zetcd_glob_p->txn_res = create_txn_res_object();
+	zetcd_glob_p->channel = create_grpc_channel_wrapper();
+	ret = txn_wrapper(zetcd_glob_p->channel->obj, zetcd_glob_p->txn_res->obj,
+      zetcd_glob_p->txn_req->obj);
+  if(ret)
   {
-        zlog_err("error :%d, %s (%s)\n", resp->err->ecode, resp->err->message, resp->err->cause);
-        cetcd_response_release(resp);
-        return -1;
+    zlog_err("error Unable to push into etcd");
+    return -1;
   }
-  cetcd_response_print(resp);
-  cetcd_response_release(resp);
-  resp = cetcd_get(&zetcd_glob_p->zetcd_client, "/frr_sample");
-  if(resp->err) 
-  {
-        zlog_err("error :%d, %s (%s)\n", resp->err->ecode, resp->err->message, resp->err->cause);
-        cetcd_response_release(resp);
-        return -1;
-  }
-  cetcd_response_print(resp);
-  cetcd_response_release(resp);
-  zetcd_glob_p->is_connected = true;
-  zetcd_connection_up("connection successful");
-  return 0;
+	zetcd_glob_p->is_connected = true;
+	zetcd_connection_up("connection successful");
+	return 0;
 }
 
 static void zetcd_start_connect_timer(void)
 {
   assert(!zetcd_glob_p->t_connect);
   assert(!zetcd_glob_p->is_connected);
-  thread_add_timer(zetcd_glob_p->master, zetcd_connect_cb, 0, 10,
+  thread_add_timer(zetcd_glob_p->master, zetcd_connect_cb, 0, 0,
      &zetcd_glob_p->t_connect);
 }
 static int zetcd_init(struct thread_master *master)
@@ -314,6 +311,7 @@ static int zetcd_init(struct thread_master *master)
 
 static int zebra_etcd_module_init(void)
 {
+  hook_register(rib_update, zetcd_trigger_update);
   hook_register(frr_late_init, zetcd_init);
   return 0;
 }
