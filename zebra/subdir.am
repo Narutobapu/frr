@@ -30,7 +30,7 @@ if SNMP
 module_LTLIBRARIES += zebra/zebra_snmp.la
 endif
 if FPM
-module_LTLIBRARIES += zebra/libzebra_fpm.la
+module_LTLIBRARIES += zebra/zebra_fpm.la
 endif
 if CETCD
 module_LTLIBRARIES += zebra/zebra_etcd.la
@@ -187,4 +187,4 @@ zebra_zebra_etcd_la_SOURCES = \
 	# end
 zebra_zebra_etcd_la_LDFLAGS = -avoid-version -module -shared -export-dynamic
 zebra_zebra_etcd_la_CFLAGS = -ggdb -fPIC
-zebra_zebra_etcd_la_LIBADD = zebra/libzebra_fpm.la
+zebra_zebra_etcd_la_LIBADD = zebra/zebra_fpm.la -letcd_wrapper
