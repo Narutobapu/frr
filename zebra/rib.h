@@ -144,6 +144,10 @@ typedef struct rib_dest_t_ {
 	 * Linkage to put dest on the FPM processing queue.
 	 */
 	TAILQ_ENTRY(rib_dest_t_) fpm_q_entries;
+	/*
+	 * Linkage to put dest on the ETCD processing queue.
+	 */
+	TAILQ_ENTRY(rib_dest_t_) etcd_q_entries;
 
 } rib_dest_t;
 
