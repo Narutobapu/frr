@@ -490,6 +490,8 @@ AC_ARG_ENABLE([pcreposix],
   AS_HELP_STRING([--enable-pcreposix], [enable using PCRE Posix libs for regex functions]))
 AC_ARG_ENABLE([fpm],
   AS_HELP_STRING([--enable-fpm], [enable Forwarding Plane Manager support]))
+AC_ARG_ENABLE([etcd_wrapper],
+  AS_HELP_STRING([--enable-etcd_wrapper], [enable etcd client]))
 AC_ARG_ENABLE([systemd],
   AS_HELP_STRING([--enable-systemd], [enable Systemd support]))
 AC_ARG_ENABLE([werror],
@@ -558,6 +560,20 @@ case "${enable_systemd}" in
     AC_MSG_ERROR([enable systemd has been specified but systemd development env not found on your system])
   else
     AC_DEFINE([HAVE_SYSTEMD], [1], [Compile systemd support in])
+  fi
+  ;;
+  "*") ;;
+esac
+case "${enable_etcd_wrapper}" in
+  "no") ;;
+  "yes")
+  AC_CHECK_LIB([etcd_wrapper], [create_txn_req_object], [ac_cv_lib_etcd_wrapper_create_txn_req_object=yes, LIBS="$LIBS -letcd_wrapper -lprotobuf -lgrpc -lgrpc++"], [ac_cv_lib_etcd_wrapper_create_txn_req_object=no], [-lprotobuf -lgrpc -lgrpc++])
+  if test "$ac_cv_lib_etcd_wrapper_create_txn_req_object" = no; then
+    AC_MSG_ERROR([enable etcd_wrapper has been specified but etcd_wrapper development env not found on your system])
+  else
+    AC_DEFINE([HAVE_CETCD], [1], [Compile etcd support in])
+    CETCD=true
+    AM_CONDITIONAL([CETCD], [test "x$CETCD" = "xtrue"])
   fi
   ;;
   "*") ;;
@@ -2073,6 +2089,21 @@ if test "x$enable_zeromq" != "xno"; then
   ])
 fi
 AM_CONDITIONAL([ZEROMQ], [test "x$ZEROMQ" = "xtrue"])
+
+#dnl ------
+#dnl Cetcd
+#dnl ------
+#if test "x$enable_cetcd" != "xno"; then
+#  PKG_CHECK_MODULES([CETCD], [1], [LIBS="$LIBS -lcetcd"], [
+#    AC_DEFINE([HAVE_CETCD], [1], [Enable Cetcd support])
+#    CETCD=true
+#  ], [
+#    if test "x$enable_cetcd" = "xyes"; then
+#      AC_MSG_ERROR([configuration specifies --enable-cetcd but cetcd was not found])
+#    fi
+#  ])
+#fi
+#AM_CONDITIONAL([CETCD], [test "x$CETCD" = "xtrue"])
 
 dnl ----------
 dnl configure date
