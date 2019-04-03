@@ -29,21 +29,30 @@
  *  * Sizes of outgoing and incoming stream buffers for writing/reading
  *   * ETCD messages.
  *    */
+#define ETCD_MAX_MSG_LEN 4096
 #define ZETCD_OBUF_SIZE (2 * ETCD_MAX_MSG_LEN)
-#define ZETCD_IBUF_SIZE (ETCD_MAX_MSG_LEN)
 
 
 #define ETCD_STATS_IVL_SECS        10
 #define ZETCD_DEFAULT_PORT "2379"
 #define ZETCD_DEFAULT_IP   "127.0.0.1"
+#define ZETCD_URI_MAX_LENGTH 32
 #define ZETCD_MAX_TXN_PER_PUSH 5
 /*
  *  * Structure that holds state for iterating over all route_node
  *   * structures that are candidates for being sent to the ETCD.
  *    */
 typedef struct zetcd_rnodes_iter_t_ {
-    rib_tables_iter_t tables_iter;
-      route_table_iter_t iter;
+
+  /*
+   *  * Iterator object that holds state for iterating over all tables in the
+   *   * Routing Information Base.
+   *    */
+  rib_tables_iter_t tables_iter;
+
+  /* * Iterator object holds state for iterating over a route table.
+   * */
+  route_table_iter_t iter;
 } zetcd_rnodes_iter_t;
 
 /*
@@ -69,7 +78,7 @@ typedef struct zetcd_glob_t_ {
   /*
    * URI to connect to etcd server.
    */
-  char zetcd_server[32];
+  char zetcd_server[ZETCD_URI_MAX_LENGTH];
   /*
    * Port on which the ETCD is running.
    */
@@ -607,7 +616,7 @@ static int zetcd_init(struct thread_master *master)
   zetcd_glob_p->is_connected = false;
 
   /*Creating a buffer of 8192 bytes to store protobuf encoded route entries.*/
-  zetcd_glob_p->obuf = stream_new(2 * 4096);
+  zetcd_glob_p->obuf = stream_new(ZETCD_OBUF_SIZE);
 
   /*Installing a command to set URI to connect over grpc channel.*/
   install_element(CONFIG_NODE, &etcd_remote_ip_cmd);
