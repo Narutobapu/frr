@@ -1,5 +1,6 @@
 #include <zebra.h>
 #include <arpa/inet.h>
+#include <string.h>
 #include "etcd_client_txn_wrapper.h"
 #include "etcd_client_wrapper.h"
 #include "log.h"
@@ -256,7 +257,9 @@ DEFUN(etcd_remote_ip,
        "port"
        "Remote etcd server port (1-65535)\n")
 {
-  sprintf(zetcd_glob_p->zetcd_server,"%s:%s",argv[3]->arg,argv[5]->arg);
+  snprintf(zetcd_glob_p->zetcd_server,
+      strlen(argv[3]->arg) + strlen(argv[5]->arg) + 2,
+      "%s:%s",argv[3]->arg,argv[5]->arg);
   zlog_debug("etcd remote connection URI:%s",zetcd_glob_p->zetcd_server);
 
   create_grpc_channel_(zetcd_glob_p->zetcd_server);
@@ -456,7 +459,11 @@ static int zetcd_trigger_update(struct route_node *rn, const char *reason)
   rib_dest_t *dest;
 
   if (!is_zetcd_connection_up())
+  {
+    zlog_debug("ETCD server connection aborted. reconnect");
+    zetcd_start_connect_timer("etcd connection down.");
     return 0;
+  }
 
   dest = rib_dest_from_rnode(rn);
 
@@ -484,6 +491,7 @@ static int zetcd_conn_up_thread_cb(struct thread *thread)
   zetcd_rnodes_iter_t *iter = NULL;
   rib_dest_t *dest = NULL;
 
+  free(zetcd_glob_p->t_conn_up);
   zetcd_glob_p->t_conn_up = NULL;
 
   iter = &zetcd_glob_p->t_conn_up_state.iter;
@@ -505,8 +513,18 @@ static int zetcd_conn_up_thread_cb(struct thread *thread)
  * */
 static void zetcd_connection_up(const char *reason)
 {
-  assert(&zetcd_glob_p->channel);
-  assert(!zetcd_glob_p->t_conn_up);
+  if(!zetcd_glob_p->channel)
+  {
+    zlog_debug("Unable to find grpc channel, reconnect.");
+    zetcd_glob_p->is_connected = false;
+    zetcd_start_connect_timer("GRPC channel failed");
+    return;
+  }
+  if(zetcd_glob_p->t_conn_up)
+  {
+    zlog_debug("zetcd_conn_up_thread_cb task is already scheduled.");
+    return;
+  }
   zetcd_rnodes_iter_init(&zetcd_glob_p->t_conn_up_state.iter);
   thread_add_timer_msec(zetcd_glob_p->master, zetcd_conn_up_thread_cb, NULL, 0,
             &zetcd_glob_p->t_conn_up);
@@ -529,6 +547,8 @@ static int zetcd_connect_cb(struct thread *t)
   int ret;
 
   /*Check if already connected.*/
+  free(zetcd_glob_p->t_connect);
+  zetcd_glob_p->t_connect = NULL;
   if (zetcd_glob_p->is_connected)
     return 0;
 
@@ -580,9 +600,18 @@ static int zetcd_connect_cb(struct thread *t)
  * */
 static void zetcd_start_connect_timer(const char *reason)
 {
+
+  if(zetcd_glob_p->t_connect)
+  {
+    zlog_debug("etcd connection task aborted as it is already scheduled.");
+    return;
+  }
+  if(zetcd_glob_p->is_connected)
+  {
+    zlog_debug("etcd connection task aborted as it is connected.");
+    return;
+  }
   zlog_debug("etcd connection thread started as :%s",reason);
-  assert(!zetcd_glob_p->t_connect);
-  assert(!zetcd_glob_p->is_connected);
   thread_add_timer(zetcd_glob_p->master, zetcd_connect_cb, 0,
       ZETCD_CONNECT_RETRY_IVL,&zetcd_glob_p->t_connect);
 }
@@ -611,7 +640,9 @@ static int zetcd_init(struct thread_master *master)
 
   /*Setting etcd default port (2379) and URI "127.0.0.1:2379"*/
   zetcd_glob_p->etcd_port = atoi(ZETCD_DEFAULT_PORT);
-  sprintf(zetcd_glob_p->zetcd_server,"%s:%s",ZETCD_DEFAULT_IP,ZETCD_DEFAULT_PORT);
+  snprintf(zetcd_glob_p->zetcd_server,
+      strlen(ZETCD_DEFAULT_IP) + strlen(ZETCD_DEFAULT_PORT) + 2,
+      "%s:%s",ZETCD_DEFAULT_IP,ZETCD_DEFAULT_PORT);
 
   zetcd_glob_p->is_connected = false;
 
