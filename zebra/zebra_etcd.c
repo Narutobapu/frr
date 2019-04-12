@@ -39,6 +39,10 @@
 #define ZETCD_DEFAULT_IP   "127.0.0.1"
 #define ZETCD_URI_MAX_LENGTH 32
 #define ZETCD_MAX_TXN_PER_PUSH 5
+#define ROUTE_KEY_PREFIX "/frr/route/"
+#define KEY_MAX_LENGTH 60
+#define MAX_PREFIX_LENGTH 3
+
 /*
  *  * Structure that holds state for iterating over all route_node
  *   * structures that are candidates for being sent to the ETCD.
@@ -343,7 +347,10 @@ static int etcd_txn(txn_wrapper_t *txn_req)
 static int zetcd_push_routes_cb(struct thread *thread)
 {
   struct stream *s = NULL;
-  char *key = NULL;
+  char key[KEY_MAX_LENGTH];
+  char prefix_length[MAX_PREFIX_LENGTH];
+  const char *key_prefix = ROUTE_KEY_PREFIX;
+  char *str_prefix = NULL;
   char *value = NULL;
   int ret = 0;
   struct prefix *prefix = NULL;
@@ -356,6 +363,8 @@ static int zetcd_push_routes_cb(struct thread *thread)
   txn_wrapper_t *txn_req = NULL;*/
 
   zetcd_glob_p->t_push = NULL;
+  memset(key, 0, sizeof(key));
+  memset(key, 0, sizeof(prefix_length));
   do {
     
     s = zetcd_glob_p->obuf;
@@ -364,9 +373,14 @@ static int zetcd_push_routes_cb(struct thread *thread)
     dest = TAILQ_FIRST(&zetcd_glob_p->dest_q);
     if (dest->rnode)
     {
-      /*Get route's IP prefix and use it as key to etcd keyspace.*/
+      /*Get route's IP prefix and prefix length
+       * ("/base_prefix/ip_prefix,prefix_len") use it as key to etcd keyspace.*/
       prefix = rib_dest_prefix(dest);
-      key = inet_ntoa(prefix->u.prefix4);
+      str_prefix = inet_ntoa(prefix->u.prefix4);
+      snprintf(prefix_length, sizeof(prefix_length), "%d",prefix->prefixlen);
+      snprintf(key, strlen(key_prefix) + strlen(str_prefix) +
+          strlen(prefix_length) + 2, "%s%s,%s", key_prefix, str_prefix,
+          prefix_length); 
     }
     /*If there are no processed pending route entries, then process one.*/
     if (stream_empty(s)) {
